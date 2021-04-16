@@ -17,9 +17,14 @@ impl<T: Config> Pallet<T> {
         // Read the previous values out of storage
         let cash_prior = Self::get_total_cash(currency_id.clone());
         let borrows_prior = Self::total_borrows(currency_id);
-
+        let reserves_prior = Self::total_reserves(currency_id);
         // Calculate the current borrow interest rate
-        Self::update_borrow_rate(currency_id.clone(), cash_prior, borrows_prior, 0)?;
+        Self::update_borrow_rate(
+            currency_id.clone(),
+            cash_prior,
+            borrows_prior,
+            reserves_prior,
+        )?;
 
         /*
          * Compound protocol:
@@ -45,10 +50,13 @@ impl<T: Config> Pallet<T> {
             borrow_index,
         )
         .ok_or(Error::<T>::CalcAccrueInterestFailed)?;
-
+        let reserve_factor = Self::reserve_factor(currency_id);
+        let total_reserves_new =
+            mul_then_div_then_add(reserves_prior, reserve_factor, RATE_DECIMAL, reserves_prior)
+                .ok_or(Error::<T>::CalcAccrueInterestFailed)?;
         TotalBorrows::<T>::insert(currency_id, total_borrows_new);
         BorrowIndex::<T>::insert(currency_id, borrow_index_new);
-
+        TotalReserves::<T>::insert(currency_id, total_reserves_new);
         Ok(())
     }
 
@@ -588,6 +596,72 @@ impl<T: Config> Pallet<T> {
             collateral_currency_id.clone(),
             repay_amount,
             collateral_underlying_amount,
+        ));
+
+        Ok(())
+    }
+
+    pub fn reduce_reserves_internal(
+        currency_id: CurrencyId,
+        reduce_amount: Balance,
+    ) -> DispatchResult {
+		// Get dev address
+		let dev_addr = DevAddress::<T>::get().ok_or(Error::<T>::DevAddressNotSet)?;
+
+        // Get current reserve
+        let reserves_prior = Self::total_reserves(currency_id);
+
+        // Check reduce amound <= reserve
+        if reduce_amount > reserves_prior {
+            return Err(Error::<T>::ReduceReservesValidation.into());
+        }
+
+        let total_reserves_new = reserves_prior - reduce_amount;
+        if total_reserves_new > reserves_prior {
+            return Err(Error::<T>::ReduceReservesValidation.into());
+        }
+        // do the transfer
+        T::Currency::transfer(
+            currency_id.clone(),
+            &Self::account_id(),
+            &dev_addr,
+            reduce_amount,
+        )?;
+
+        TotalReserves::<T>::insert(currency_id, total_reserves_new);
+
+        Self::deposit_event(Event::<T>::ReservesReduced(
+            dev_addr,
+            currency_id,
+            reduce_amount,
+            total_reserves_new,
+        ));
+
+        Ok(())
+    }
+
+    pub fn add_reserves_internal(currency_id: CurrencyId, add_amount: Balance) -> DispatchResult {
+		// Get dev address
+		let dev_addr = DevAddress::<T>::get().ok_or(Error::<T>::DevAddressNotSet)?;
+
+        T::Currency::transfer(
+            currency_id.clone(),
+			&dev_addr,
+            &Self::account_id(),
+            add_amount,
+        )?;
+
+        // Get current reserve
+        let reserves_prior = Self::total_reserves(currency_id);
+        let total_reserves_new = reserves_prior + add_amount;
+
+        TotalReserves::<T>::insert(currency_id, total_reserves_new);
+
+        Self::deposit_event(Event::<T>::ReservesAdded(
+            Self::account_id().clone(),
+            currency_id,
+            add_amount,
+            total_reserves_new,
         ));
 
         Ok(())

@@ -4,6 +4,7 @@
 
 use frame_support::pallet_prelude::*;
 use frame_support::transactional;
+use frame_system::ensure_root;
 use frame_system::pallet_prelude::*;
 use orml_traits::{MultiCurrency, MultiCurrencyExtended};
 use primitives::{Amount, Balance, CurrencyId, RATE_DECIMAL};
@@ -57,6 +58,7 @@ pub mod module {
         /// The loan's module id, keep all collaterals of CDPs.
         #[pallet::constant]
         type ModuleId: Get<ModuleId>;
+
     }
 
     #[pallet::error]
@@ -102,6 +104,8 @@ pub mod module {
         LiquidateValueOverflow,
         EquivalentCollateralAmountOverflow,
         RealCollateralAmountOverflow,
+        ReduceReservesValidation,
+		DevAddressNotSet,
     }
 
     #[pallet::event]
@@ -126,6 +130,9 @@ pub mod module {
             Balance,
             Balance,
         ),
+
+        ReservesReduced(T::AccountId, CurrencyId, Balance, Balance),
+        ReservesAdded(T::AccountId, CurrencyId, Balance, Balance),
     }
 
     // Loan storage
@@ -140,6 +147,13 @@ pub mod module {
     #[pallet::storage]
     #[pallet::getter(fn total_borrows)]
     pub type TotalBorrows<T: Config> = StorageMap<_, Twox64Concat, CurrencyId, Balance, ValueQuery>;
+
+    ///  Total amount of reserves of the underlying in this market
+    /// CollateralType -> Balance
+    #[pallet::storage]
+    #[pallet::getter(fn total_reserves)]
+    pub type TotalReserves<T: Config> =
+        StorageMap<_, Twox64Concat, CurrencyId, Balance, ValueQuery>;
 
     /// Mapping of account addresses to outstanding borrow balances
     /// CollateralType -> Owner -> BorrowSnapshot
@@ -200,6 +214,10 @@ pub mod module {
     #[pallet::getter(fn exchange_rate)]
     pub type ExchangeRate<T: Config> = StorageMap<_, Twox64Concat, CurrencyId, u128, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn reserve_factor)]
+    pub type ReserveFactor<T: Config> = StorageMap<_, Twox64Concat, CurrencyId, u128, ValueQuery>;
+
     // Rate storage
     #[pallet::storage]
     #[pallet::getter(fn multipler_per_block)]
@@ -236,6 +254,15 @@ pub mod module {
     #[pallet::storage]
     #[pallet::getter(fn close_factor)]
     pub type CloseFactor<T: Config> = StorageMap<_, Twox64Concat, CurrencyId, u128, ValueQuery>;
+
+    // dev address
+    #[pallet::storage]
+    #[pallet::getter(fn pending_dev_address)]
+    pub type PendingDevAddress<T: Config> = StorageValue<_, Option<T::AccountId>, ValueQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn dev_address)]
+    pub type DevAddress<T: Config> = StorageValue<_, Option<T::AccountId>, ValueQuery>;
 
     #[pallet::genesis_config]
     pub struct GenesisConfig {
@@ -475,6 +502,30 @@ pub mod module {
                 repay_amount,
                 collateral_token,
             )?;
+            Ok(().into())
+        }
+
+        #[pallet::weight(10_000)]
+        #[transactional]
+        pub fn add_reserves(
+            origin: OriginFor<T>,
+            currency_id: CurrencyId,
+            add_amount: Balance,
+        ) -> DispatchResultWithPostInfo {
+            ensure_root(origin)?;
+            Self::add_reserves_internal(currency_id, add_amount)?;
+            Ok(().into())
+        }
+
+        #[pallet::weight(10_000)]
+        #[transactional]
+        pub fn reduce_reserves(
+            origin: OriginFor<T>,
+            currency_id: CurrencyId,
+            reduce_amount: Balance,
+        ) -> DispatchResultWithPostInfo {
+            ensure_root(origin)?;
+            Self::reduce_reserves_internal(currency_id, reduce_amount)?;
             Ok(().into())
         }
     }
