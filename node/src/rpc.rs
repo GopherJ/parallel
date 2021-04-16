@@ -1,19 +1,14 @@
-//! A collection of node-specific RPC methods.
-//! Substrate provides the `sc-rpc` crate, which defines the core RPC layer
-//! used by Substrate nodes. This file extends those RPC definitions with
-//! capabilities that are specific to this project's runtime configuration.
-
 #![warn(missing_docs)]
 
 use std::sync::Arc;
 
-use parallel_runtime::{opaque::Block, AccountId, Index};
-use primitives::Balance;
+use primitives::*;
 pub use sc_rpc_api::DenyUnsafe;
 use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use sp_transaction_pool::TransactionPool;
+use vanilla_runtime::{opaque::Block, AccountId, Index};
 
 /// Full client dependencies.
 pub struct FullDeps<C, P> {

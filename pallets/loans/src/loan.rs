@@ -1,30 +1,34 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+// Copyright 2021 Parallel Finance Developer.
+// This file is part of Parallel Finance.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use primitives::{Balance, CurrencyId, RATE_DECIMAL};
 use sp_runtime::{traits::Zero, DispatchResult};
 use sp_std::prelude::*;
 use sp_std::result;
 
-use crate::util::*;
-use crate::*;
-
-use pallet_ocw_oracle;
+use crate::{util::*, *};
 
 impl<T: Config> Pallet<T> {
     /// This calculates interest accrued from the last checkpointed block
     /// up to the current block and writes new checkpoint to storage.
     pub fn accrue_interest(currency_id: CurrencyId) -> DispatchResult {
         // Read the previous values out of storage
-        let cash_prior = Self::get_total_cash(currency_id.clone());
+        let cash_prior = Self::get_total_cash(currency_id);
         let borrows_prior = Self::total_borrows(currency_id);
         let reserves_prior = Self::total_reserves(currency_id);
         // Calculate the current borrow interest rate
-        Self::update_borrow_rate(
-            currency_id.clone(),
-            cash_prior,
-            borrows_prior,
-            reserves_prior,
-        )?;
+        Self::update_borrow_rate(currency_id, cash_prior, borrows_prior, 0)?;
 
         /*
          * Compound protocol:
@@ -97,7 +101,7 @@ impl<T: Config> Pallet<T> {
             Ok(())
         })?;
 
-        T::Currency::transfer(currency_id.clone(), who, &Self::account_id(), mint_amount)?;
+        T::Currency::transfer(*currency_id, who, &Self::account_id(), mint_amount)?;
 
         Ok(())
     }
@@ -136,7 +140,7 @@ impl<T: Config> Pallet<T> {
         })?;
 
         // debug::info!("moduleAccountBalance: {:?}", T::Currency::free_balance(currency_id.clone(), &who));
-        T::Currency::transfer(currency_id.clone(), &Self::account_id(), who, redeem_amount)?;
+        T::Currency::transfer(*currency_id, &Self::account_id(), who, redeem_amount)?;
 
         Ok(())
     }
@@ -152,7 +156,7 @@ impl<T: Config> Pallet<T> {
                 continue;
             }
 
-            let (borrow_currency_price, _) = pallet_ocw_oracle::Prices::<T>::get(currency_id)
+            let (borrow_currency_price, _) = T::PriceFeeder::get_price(currency_id)
                 .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
             if borrow_currency_price.is_zero() {
                 return Err(Error::<T>::OracleCurrencyPriceNotReady);
@@ -164,7 +168,7 @@ impl<T: Config> Pallet<T> {
                 .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
         }
 
-        return Ok(total_borrow_value);
+        Ok(total_borrow_value)
     }
 
     pub(crate) fn total_will_borrow_value(
@@ -172,7 +176,7 @@ impl<T: Config> Pallet<T> {
         borrow_currency_id: &CurrencyId,
         borrow_amount: Balance,
     ) -> result::Result<Balance, Error<T>> {
-        let (borrow_currency_price, _) = pallet_ocw_oracle::Prices::<T>::get(borrow_currency_id)
+        let (borrow_currency_price, _) = T::PriceFeeder::get_price(borrow_currency_id)
             .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
         let mut total_borrow_value = borrow_amount
             .checked_mul(borrow_currency_price)
@@ -182,7 +186,7 @@ impl<T: Config> Pallet<T> {
             .checked_add(Self::total_borrowed_value(borrower)?)
             .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
 
-        return Ok(total_borrow_value);
+        Ok(total_borrow_value)
     }
 
     pub(crate) fn collateral_asset_value(
@@ -197,19 +201,19 @@ impl<T: Config> Pallet<T> {
         let collateral_factor = CollateralRate::<T>::get(currency_id);
         let currency_exchange_rate = ExchangeRate::<T>::get(currency_id);
 
-        let (currency_price, _) = pallet_ocw_oracle::Prices::<T>::get(currency_id)
+        let (currency_price, _) = T::PriceFeeder::get_price(currency_id)
             .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
         if currency_price.is_zero() {
             return Err(Error::<T>::OracleCurrencyPriceNotReady);
         }
 
-        Ok(collateral
+        collateral
             .checked_mul(collateral_factor)
             .and_then(|r| r.checked_div(RATE_DECIMAL))
             .and_then(|r| r.checked_mul(currency_exchange_rate))
             .and_then(|r| r.checked_div(RATE_DECIMAL))
             .and_then(|r| r.checked_mul(currency_price))
-            .ok_or(Error::<T>::CollateralOverflow)?)
+            .ok_or(Error::<T>::CollateralOverflow)
     }
 
     pub(crate) fn total_collateral_asset_value(
@@ -217,7 +221,7 @@ impl<T: Config> Pallet<T> {
     ) -> result::Result<Balance, Error<T>> {
         let collateral_assets = AccountCollateralAssets::<T>::get(borrower);
         if collateral_assets.is_empty() {
-            return Err(Error::<T>::NoCollateralAsset.into());
+            return Err(Error::<T>::NoCollateralAsset);
         }
 
         let mut total_asset_value: Balance = 0_u128;
@@ -227,7 +231,7 @@ impl<T: Config> Pallet<T> {
                 .ok_or(Error::<T>::CollateralOverflow)?;
         }
 
-        return Ok(total_asset_value);
+        Ok(total_asset_value)
     }
 
     /// Borrower shouldn't borrow more than what he/she has collateraled in total
@@ -268,12 +272,7 @@ impl<T: Config> Pallet<T> {
             .checked_add(borrow_amount)
             .ok_or(Error::<T>::CalcBorrowBalanceFailed)?;
 
-        T::Currency::transfer(
-            currency_id.clone(),
-            &Self::account_id(),
-            borrower,
-            borrow_amount,
-        )?;
+        T::Currency::transfer(*currency_id, &Self::account_id(), borrower, borrow_amount)?;
 
         AccountBorrows::<T>::insert(
             currency_id,
@@ -303,12 +302,7 @@ impl<T: Config> Pallet<T> {
             return Err(Error::<T>::RepayAmountTooBig.into());
         }
 
-        T::Currency::transfer(
-            currency_id.clone(),
-            borrower,
-            &Self::account_id(),
-            repay_amount,
-        )?;
+        T::Currency::transfer(*currency_id, borrower, &Self::account_id(), repay_amount)?;
 
         let account_borrows_new = account_borrows
             .checked_sub(repay_amount)
@@ -467,9 +461,8 @@ impl<T: Config> Pallet<T> {
             .and_then(|r| r.checked_div(RATE_DECIMAL))
             .ok_or(Error::<T>::CollateralOverflow)?;
 
-        let (collateral_token_price, _) =
-            pallet_ocw_oracle::Prices::<T>::get(collateral_currency_id)
-                .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
+        let (collateral_token_price, _) = T::PriceFeeder::get_price(&collateral_currency_id)
+            .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
 
         //the total value of borrower's collateral token
         let collateral_value = collateral_underlying_amount
@@ -477,7 +470,7 @@ impl<T: Config> Pallet<T> {
             .ok_or(Error::<T>::CollateralOverflow)?;
 
         //calculate liquidate_token_sum
-        let (liquidate_token_price, _) = pallet_ocw_oracle::Prices::<T>::get(liquidate_currency_id)
+        let (liquidate_token_price, _) = T::PriceFeeder::get_price(&liquidate_currency_id)
             .ok_or(Error::<T>::OracleCurrencyPriceNotReady)?;
 
         let liquidate_value = repay_amount
@@ -530,7 +523,7 @@ impl<T: Config> Pallet<T> {
         // 1.liquidator repay borrower's debt,
         // transfer from liquidator to module account
         T::Currency::transfer(
-            liquidate_currency_id.clone(),
+            *liquidate_currency_id,
             liquidator,
             &Self::account_id(),
             repay_amount,
@@ -592,8 +585,8 @@ impl<T: Config> Pallet<T> {
         Self::deposit_event(Event::<T>::LiquidationOccur(
             liquidator.clone(),
             borrower.clone(),
-            liquidate_currency_id.clone(),
-            collateral_currency_id.clone(),
+            *liquidate_currency_id,
+            *collateral_currency_id,
             repay_amount,
             collateral_underlying_amount,
         ));

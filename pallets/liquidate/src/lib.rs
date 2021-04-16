@@ -1,15 +1,27 @@
+// Copyright 2021 Parallel Finance Developer.
+// This file is part of Parallel Finance.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use frame_support::pallet_prelude::*;
+use frame_support::{log, pallet_prelude::*};
 use frame_system::{
     ensure_signed,
     offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
     pallet_prelude::*,
 };
 pub use module::*;
-use pallet_loans;
-use pallet_ocw_oracle;
 use primitives::*;
 use sp_core::crypto::KeyTypeId;
 use sp_runtime::{
@@ -83,10 +95,7 @@ pub mod module {
 
     #[pallet::config]
     pub trait Config:
-        frame_system::Config
-        + CreateSignedTransaction<Call<Self>>
-        + pallet_loans::Config
-        + pallet_ocw_oracle::Config
+        frame_system::Config + CreateSignedTransaction<Call<Self>> + pallet_loans::Config
     {
         /// The identifier type for an offchain worker.
         type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
@@ -94,6 +103,8 @@ pub mod module {
         type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
         /// The overarching dispatch call type.
         type Call: From<Call<Self>>;
+        /// The oracle price feeder
+        type PriceFeeder: PriceFeeder;
     }
 
     #[pallet::hooks]
@@ -127,8 +138,8 @@ pub mod module {
             waiting_for_liquidation_vec: Vec<WaitingForLiquidation<T::AccountId>>,
         ) -> DispatchResultWithPostInfo {
             let who = ensure_signed(origin)?;
-            for i in 0..waiting_for_liquidation_vec.len() {
-                let waiting_for_liquidation = waiting_for_liquidation_vec[i].clone();
+            for (i, waiting_for_liquidation) in waiting_for_liquidation_vec.iter().enumerate() {
+                let waiting_for_liquidation = waiting_for_liquidation.clone();
                 let borrower = waiting_for_liquidation.0;
                 let liquidate_token = waiting_for_liquidation.1;
                 let collateral_token = waiting_for_liquidation.2;
@@ -141,9 +152,9 @@ pub mod module {
                     collateral_token,
                 );
                 match r {
-                    Ok(_) => debug::info!("success liquidate index: {:?}", i),
+                    Ok(_) => log::info!("success liquidate index: {:?}", i),
                     Err(e) => {
-                        debug::error!("error invoke liquidate call: {:?}", e);
+                        log::error!("error invoke liquidate call: {:?}", e);
                         continue;
                     }
                 }
@@ -182,15 +193,16 @@ pub mod module {
                     let mut classify_collaterals: Vec<CollateralsAccountBook> = vec![];
 
                     for currency_id in pallet_loans::Currencies::<T>::get().iter() {
-                        let currency_price = match pallet_ocw_oracle::Prices::<T>::get(currency_id)
-                            .ok_or(Error::<T>::OracleCurrencyPriceNotReady)
-                        {
-                            Ok((v, _)) => v,
-                            Err(e) => {
-                                debug::error!("error msg: {:?}", e);
-                                Price::MIN
-                            }
-                        };
+                        let currency_price =
+                            match <T as module::Config>::PriceFeeder::get_price(currency_id)
+                                .ok_or(Error::<T>::OracleCurrencyPriceNotReady)
+                            {
+                                Ok((v, _)) => v,
+                                Err(e) => {
+                                    log::error!("error msg: {:?}", e);
+                                    Price::MIN
+                                }
+                            };
                         // 2.1.1 insert debt by currency
                         let borrow_currency_amount =
                             match pallet_loans::Pallet::<T>::borrow_balance_stored(
@@ -199,7 +211,7 @@ pub mod module {
                             ) {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    debug::error!("error get borrow balance: {:?}", e);
+                                    log::error!("error get borrow balance: {:?}", e);
                                     continue 'outer;
                                 }
                             };
@@ -213,13 +225,13 @@ pub mod module {
                             {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    debug::error!("error calculate borrow: {:?}", e);
+                                    log::error!("error calculate borrow: {:?}", e);
                                     continue 'outer;
                                 }
                             };
 
                             classify_debts.push((
-                                currency_id.clone(),
+                                *currency_id,
                                 borrow_currency_amount,
                                 currency_price,
                                 borrow_currency_sum_price,
@@ -242,7 +254,7 @@ pub mod module {
                             {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    debug::error!("error calculate collateral amount: {:?}", e);
+                                    log::error!("error calculate collateral amount: {:?}", e);
                                     continue 'outer;
                                 }
                             };
@@ -254,14 +266,14 @@ pub mod module {
                             {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    debug::error!("error calculate collateral sum price: {:?}", e);
+                                    log::error!("error calculate collateral sum price: {:?}", e);
                                     continue 'outer;
                                 }
                             };
                             let liquidation_threshold =
                                 pallet_loans::LiquidationThreshold::<T>::get(currency_id);
                             classify_collaterals.push((
-                                currency_id.clone(),
+                                *currency_id,
                                 collateral_currency_amount,
                                 currency_price,
                                 collateral_currency_sum_price,
@@ -270,7 +282,7 @@ pub mod module {
                         }
                     }
 
-                    if classify_debts.len() == 0 || classify_collaterals.len() == 0 {
+                    if classify_debts.is_empty() || classify_collaterals.is_empty() {
                         continue;
                     }
                     // 3 check liquidation threshold
@@ -288,13 +300,13 @@ pub mod module {
 							{
 								Ok(v) => v,
 								Err(e) => {
-									debug::error!("error calculate liquidation threshold: {:?}",e);
+									log::error!("error calculate liquidation threshold: {:?}",e);
 									processing = false;
 									acc
 								}
 							},
                     );
-                    if processing == false {
+                    if !processing {
                         continue;
                     }
 
@@ -308,21 +320,21 @@ pub mod module {
 							{
 								Ok(v) => v,
 								Err(e) => {
-									debug::error!("error calculate debt toal: {:?}",e);
+									log::error!("error calculate debt toal: {:?}",e);
 									processing = false;
 									acc
 								}
 							},
                     );
-                    if processing == false {
+                    if !processing {
                         continue;
                     }
 
-                    debug::info!(
+                    log::info!(
                         "_threshold_value: {:?}",
                         collateral_liquidation_threshold_value
                     );
-                    debug::info!("debt_total_value: {:?}", debt_total_value);
+                    log::info!("debt_total_value: {:?}", debt_total_value);
 
                     // 4 no need liquidate
                     if collateral_liquidation_threshold_value > debt_total_value {
@@ -336,20 +348,20 @@ pub mod module {
                     let collateral_total_value = classify_collaterals.iter().fold(
                         Price::MIN,
                         |acc,&(_,_,_,total_sum_price,_)|
-							// acc + total_sum_price 
+							// acc + total_sum_price
 							match acc
 								.checked_add(total_sum_price)
 								.ok_or(Error::<T>::CaculateError)
 							{
 								Ok(v) => v,
 								Err(e) => {
-									debug::error!("error calculate collateral toal: {:?}",e);
+									log::error!("error calculate collateral toal: {:?}",e);
 									processing = false;
 									acc
 								}
 							},
                     );
-                    if processing == false {
+                    if !processing {
                         continue;
                     }
                     for &(liquidate_token, debt_repay_amount, _, _debt_total_sum_price) in
@@ -373,7 +385,7 @@ pub mod module {
                             {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    debug::error!(
+                                    log::error!(
                                         "error calculate waiting_for_liquidation_vec: {:?}",
                                         e
                                     );
@@ -389,7 +401,7 @@ pub mod module {
                             ));
                         }
                     }
-                    if waiting_for_liquidation_vec.len() == 0 || processing == false {
+                    if waiting_for_liquidation_vec.is_empty() || !processing {
                         continue;
                     }
                     //liquidate a single user every time
@@ -397,7 +409,7 @@ pub mod module {
                 }
                 return;
             }
-            debug::error!("offchain_worker error: get lock failed");
+            log::error!("offchain_worker error: get lock failed");
         }
 
         fn offchain_signed_tx(
@@ -414,16 +426,16 @@ pub mod module {
             // Display error if the signed tx fails.
             if let Some((acc, res)) = result {
                 if res.is_err() {
-                    debug::error!("failure: offchain_signed_tx: tx sent: {:?}", acc.id);
+                    log::error!("failure: offchain_signed_tx: tx sent: {:?}", acc.id);
                 } else {
-                    debug::info!(
+                    log::info!(
                         "successful: offchain_signed_tx: tx sent: {:?} index is {:?}",
                         acc.id,
                         acc.index
                     );
                 }
             } else {
-                debug::error!("No local account available");
+                log::error!("No local account available");
             }
         }
     }
@@ -431,7 +443,7 @@ pub mod module {
     impl<T: Config> rt_offchain::storage_lock::BlockNumberProvider for Pallet<T> {
         type BlockNumber = T::BlockNumber;
         fn current_block_number() -> Self::BlockNumber {
-            <frame_system::Module<T>>::block_number()
+            <frame_system::Pallet<T>>::block_number()
         }
     }
 }

@@ -1,6 +1,17 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+// Copyright 2021 Parallel Finance Developer.
+// This file is part of Parallel Finance.
 
-use pallet_timestamp;
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use primitives::{Balance, CurrencyId};
 use sp_runtime::DispatchResult;
 
@@ -14,7 +25,6 @@ impl<T: Config> Pallet<T> {
     pub fn stake_internal(who: &T::AccountId, amount: Balance) -> DispatchResult {
         T::Currency::transfer(CurrencyId::DOT, who, &Self::account_id(), amount)?;
         T::Currency::transfer(CurrencyId::xDOT, &Self::account_id(), who, amount)?;
-
         Ok(())
     }
     /// Sender redeems xDOTs in exchange for pending balance(Dot)
@@ -26,7 +36,7 @@ impl<T: Config> Pallet<T> {
         let mut pending_balances = Self::account_pending_balance(nominator);
         pending_balances.push(PendingBalance {
             balance: amount,
-            timestamp: <pallet_timestamp::Module<T>>::get(),
+            timestamp: <pallet_timestamp::Pallet<T>>::get(),
         });
         AccountPendingBalance::<T>::insert(nominator, pending_balances);
 

@@ -13,3 +13,7 @@
 
 # The cache for chain data in container
 .local
+
+.cargo-remote.toml
+
+local-test

@@ -1,19 +1,29 @@
+// Copyright 2021 Parallel Finance Developer.
+// This file is part of Parallel Finance.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use primitives::{Balance, CurrencyId, BLOCK_PER_YEAR, RATE_DECIMAL};
 use sp_runtime::{traits::Zero, DispatchResult};
-use sp_std::prelude::*;
 
-use crate::util::*;
-use crate::*;
+use crate::{util::*, *};
 
 impl<T: Config> Pallet<T> {
     fn insert_borrow_rate(currency_id: CurrencyId, rate: u128) {
-        BorrowRate::<T>::insert(currency_id, rate.clone());
-        Self::deposit_event(Event::BorrowRateUpdated(currency_id, rate));
+        BorrowRate::<T>::insert(currency_id, rate);
     }
 
     fn insert_supply_rate(currency_id: CurrencyId, rate: u128) {
-        SupplyRate::<T>::insert(currency_id, rate.clone());
-        Self::deposit_event(Event::SupplyRateUpdated(currency_id, rate));
+        SupplyRate::<T>::insert(currency_id, rate);
     }
 
     pub fn to_decimal(n: Option<u128>) -> Result<u128, Error<T>> {
@@ -38,7 +48,7 @@ impl<T: Config> Pallet<T> {
         mul_then_div(borrows, RATE_DECIMAL, total).ok_or(Error::<T>::CalcInterestRateFailed)
     }
 
-    pub fn update_jump_rate_model(
+    pub fn init_jump_rate_model(
         base_rate_per_year: u128,
         multiplier_per_year: u128,
         jump_multiplier_per_year: u128,
@@ -64,7 +74,7 @@ impl<T: Config> Pallet<T> {
         JumpMultiplierPerBlock::<T>::put(Some(jump));
         Kink::<T>::put(Some(kink));
 
-        Self::deposit_event(Event::NewInterestParams(base, multiplier, jump, kink));
+        Self::deposit_event(Event::InitInterestRateModel(base, multiplier, jump, kink));
         Ok(())
     }
 
@@ -76,7 +86,6 @@ impl<T: Config> Pallet<T> {
     ) -> DispatchResult {
         let util = Self::utilization_rate(cash, borrows, reserves)?;
         UtilityRate::<T>::insert(currency_id, util);
-        Self::deposit_event(Event::UtilityRateUpdated(currency_id, util));
 
         let multiplier_per_block =
             MultiplierPerBlock::<T>::get().ok_or(Error::<T>::CalcInterestRateFailed)?;
@@ -121,8 +130,7 @@ impl<T: Config> Pallet<T> {
         reserves: Balance,
         reserve_factor_mantissa: u128,
     ) -> DispatchResult {
-        let one_minus_reserve_factor =
-            u128::from(RATE_DECIMAL).saturating_sub(reserve_factor_mantissa);
+        let one_minus_reserve_factor = RATE_DECIMAL.saturating_sub(reserve_factor_mantissa);
 
         let borrow_rate = BorrowRate::<T>::get(currency_id);
         let rate_to_pool = Self::to_decimal(borrow_rate.checked_mul(one_minus_reserve_factor))?;
@@ -141,7 +149,7 @@ impl<T: Config> Pallet<T> {
          */
         let total_borrows = Self::total_borrows(currency_id);
         let total_supply = Self::total_supply(currency_id);
-        let total_cash = Self::get_total_cash(currency_id.clone());
+        let total_cash = Self::get_total_cash(currency_id);
 
         let cash_plus_borrows = total_cash
             .checked_add(total_borrows)
