@@ -55,5 +55,5 @@ jobs:
         with:
           files: |
             vanilla-${{ steps.get_version.outputs.VERSION }}.tar.xz
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
