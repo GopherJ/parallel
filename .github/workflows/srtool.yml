@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        chain: ["heiko", "parallel", "vanilla"]
+        chain: ["heiko", "parallel"]
     steps:
       - uses: actions/checkout@v2
       - name: Srtool build
@@ -55,6 +55,6 @@ jobs:
           prerelease: false
           name: Release ${{ steps.git_tag.outputs.tag }}
           body: |
-            Test body ${{  steps.runtime_version.outputs.version }}
+            `${{ matrix.chain }}_runtime-v${{ steps.runtime_version.outputs.version }}.compact.wasm`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
