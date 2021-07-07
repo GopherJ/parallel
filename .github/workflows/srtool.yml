@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        chain: ["heiko", "parallel"]
+        chain: ["heiko", "parallel", "vanilla"]
     steps:
       - uses: actions/checkout@v2
       - name: Srtool build
@@ -35,6 +35,10 @@ jobs:
             ${{ steps.srtool_build.outputs.wasm }}
             ${{ steps.srtool_build.outputs.wasm_compressed }}
             ${{ matrix.chain }}-srtool-digest.json
+      - name: Get Runtime Version
+        if: startsWith(github.ref, 'refs/tags/')
+        id: runtime_version
+        run: echo ::set-output name=version::$(cat runtime/${{ matrix.chain }}/src/lib.rs | tr -d ', ' | cut -d':'' -f2)
       - name: Get GIT Tag
         if: startsWith(github.ref, 'refs/tags/')
         id: git_tag
@@ -50,5 +54,7 @@ jobs:
           draft: false
           prerelease: false
           name: Release ${{ steps.git_tag.outputs.tag }}
+          body: |
+            Test body ${{  steps.runtime_version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
