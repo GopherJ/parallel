@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - master
+    tags:
+      - "v*"
 
 jobs:
   srtool:
-    if: github.repository == 'parallel-finance/parallel'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -34,3 +35,16 @@ jobs:
             ${{ steps.srtool_build.outputs.wasm }}
             ${{ steps.srtool_build.outputs.wasm_compressed }}
             ${{ matrix.chain }}-srtool-digest.json
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ steps.srtool_build.outputs.wasm }}
+            ${{ steps.srtool_build.outputs.wasm_compressed }}
+            ${{ matrix.chain }}-srtool-digest.json
+          draft: false
+          prerelease: false
+          name: ${{ matrix.chain }} ${{ github.ref }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

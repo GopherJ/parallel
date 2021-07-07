@@ -5425,7 +5425,6 @@ dependencies = [
  "orml-traits",
  "pallet-balances",
  "pallet-loans",
- "pallet-prices",
  "pallet-timestamp",
  "parallel-primitives",
  "parity-scale-codec",
