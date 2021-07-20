@@ -1,19 +1,14 @@
 name: Srtool build
 
 on:
-  push:
-    branches:
-      - master
-    tags:
-      - "v*"
+  pull_request:
 
 jobs:
   srtool:
-    if: github.repository == 'parallel-finance/parallel'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        chain: ["heiko", "parallel", "vanilla"]
+        chain: ["vanilla"]
     steps:
       - uses: actions/checkout@v2
       - name: Srtool build
