@@ -489,11 +489,11 @@ parameter_types! {
 type OracleMembershipInstance = pallet_membership::Instance2;
 impl pallet_membership::Config<OracleMembershipInstance> for Runtime {
     type Event = Event;
-    type AddOrigin = EnsureRoot<AccountId>;
-    type RemoveOrigin = EnsureRoot<AccountId>;
-    type SwapOrigin = EnsureRoot<AccountId>;
-    type ResetOrigin = EnsureRoot<AccountId>;
-    type PrimeOrigin = EnsureRoot<AccountId>;
+    type AddOrigin = EnsureRootOrHalfCouncil<AccountId>;
+    type RemoveOrigin = EnsureRootOrHalfCouncil<AccountId>;
+    type SwapOrigin = EnsureRootOrHalfCouncil<AccountId>;
+    type ResetOrigin = EnsureRootOrHalfCouncil<AccountId>;
+    type PrimeOrigin = EnsureRootOrHalfCouncil<AccountId>;
     type MembershipInitialized = ();
     type MembershipChanged = ();
     type MaxMembers = OracleMaxMembers;
