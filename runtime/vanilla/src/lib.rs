@@ -101,7 +101,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: create_runtime_str!("vanilla"),
     impl_name: create_runtime_str!("vanilla"),
     authoring_version: 1,
-    spec_version: 101,
+    spec_version: 102,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -489,11 +489,11 @@ parameter_types! {
 type OracleMembershipInstance = pallet_membership::Instance2;
 impl pallet_membership::Config<OracleMembershipInstance> for Runtime {
     type Event = Event;
-    type AddOrigin = EnsureRootOrHalfCouncil<AccountId>;
-    type RemoveOrigin = EnsureRootOrHalfCouncil<AccountId>;
-    type SwapOrigin = EnsureRootOrHalfCouncil<AccountId>;
-    type ResetOrigin = EnsureRootOrHalfCouncil<AccountId>;
-    type PrimeOrigin = EnsureRootOrHalfCouncil<AccountId>;
+    type AddOrigin = EnsureRootOrHalfCouncil;
+    type RemoveOrigin = EnsureRootOrHalfCouncil;
+    type SwapOrigin = EnsureRootOrHalfCouncil;
+    type ResetOrigin = EnsureRootOrHalfCouncil;
+    type PrimeOrigin = EnsureRootOrHalfCouncil;
     type MembershipInitialized = ();
     type MembershipChanged = ();
     type MaxMembers = OracleMaxMembers;
