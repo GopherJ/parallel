@@ -53,18 +53,22 @@ use xcm::v0::{Junction, MultiAsset, MultiLocation, Outcome};
 
 // Import ORML dependcies
 use orml_currencies::BasicCurrencyAdapter;
-use orml_traits::MultiCurrency;
-use orml_traits::{parameter_type_with_key, DataProvider, DataProviderExtended, XcmTransfer};
+use orml_traits::{
+    parameter_type_with_key, DataProvider, DataProviderExtended, MultiCurrency, XcmExecutionResult,
+    XcmTransfer,
+};
 
 // Import Parallel dependencies
 /// Constant values used within the runtime.
 pub mod constants;
 
 pub use constants::{currency, fee, time};
+
 pub use pallet_liquid_staking;
 pub use pallet_liquidation;
 pub use pallet_loans;
 pub use pallet_multisig;
+pub use pallet_nominee_election;
 
 use currency::*;
 use fee::*;
@@ -99,7 +103,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: create_runtime_str!("vanilla"),
     impl_name: create_runtime_str!("vanilla"),
     authoring_version: 1,
-    spec_version: 100,
+    spec_version: 110,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -273,13 +277,13 @@ impl pallet_multisig::Config for Runtime {
 }
 
 parameter_types! {
-    pub const LaunchPeriod: BlockNumber = 28 * 24 * 60 * MINUTES;
-    pub const VotingPeriod: BlockNumber = 28 * 24 * 60 * MINUTES;
-    pub const FastTrackVotingPeriod: BlockNumber = 3 * 24 * 60 * MINUTES;
+    pub const LaunchPeriod: BlockNumber = 7 * 24 * 60 * MINUTES;
+    pub const VotingPeriod: BlockNumber = 7 * 24 * 60 * MINUTES;
+    pub const FastTrackVotingPeriod: BlockNumber = 1 * 24 * 60 * MINUTES;
     pub const InstantAllowed: bool = true;
     pub const MinimumDeposit: Balance = 100 * DOLLARS;
-    pub const EnactmentPeriod: BlockNumber = 30 * 24 * 60 * MINUTES;
-    pub const CooloffPeriod: BlockNumber = 28 * 24 * 60 * MINUTES;
+    pub const EnactmentPeriod: BlockNumber = 8 * 24 * 60 * MINUTES;
+    pub const CooloffPeriod: BlockNumber = 7 * 24 * 60 * MINUTES;
     // One cent: $10,000 / MB
     pub const PreimageByteDeposit: Balance = 1 * CENTS;
     pub const MaxVotes: u32 = 100;
@@ -338,7 +342,7 @@ impl pallet_democracy::Config for Runtime {
 }
 
 parameter_types! {
-    pub const CouncilMotionDuration: BlockNumber = 5 * DAYS;
+    pub const CouncilMotionDuration: BlockNumber = 1 * DAYS;
     pub const CouncilMaxProposals: u32 = 100;
     pub const CouncilMaxMembers: u32 = 100;
 }
@@ -391,7 +395,7 @@ impl pallet_elections_phragmen::Config for Runtime {
 }
 
 parameter_types! {
-    pub const TechnicalMotionDuration: BlockNumber = 5 * DAYS;
+    pub const TechnicalMotionDuration: BlockNumber = 1 * DAYS;
     pub const TechnicalMaxProposals: u32 = 100;
     pub const TechnicalMaxMembers: u32 = 100;
 }
@@ -596,16 +600,6 @@ impl pallet_prices::Config for Runtime {
 }
 
 parameter_types! {
-    pub const LockPeriod: u64 = 20000; // in milli-seconds
-    pub const LiquidateFactor: Percent = Percent::from_percent(50);
-}
-impl pallet_liquidation::Config for Runtime {
-    type AuthorityId = pallet_liquidation::crypto::AuthId;
-    type LockPeriod = LockPeriod;
-    type LiquidateFactor = LiquidateFactor;
-}
-
-parameter_types! {
     pub const StakingPalletId: PalletId = PalletId(*b"par/stak");
     pub const StakingCurrency: CurrencyId = CurrencyId::KSM;
     pub const LiquidCurrency: CurrencyId = CurrencyId::xKSM;
@@ -661,6 +655,43 @@ impl pallet_liquid_staking::Config for Runtime {
     type XcmTransfer = XcmTransferT;
     type Members = IsInVec<()>;
     type BaseXcmWeight = BaseXcmWeight;
+}
+
+parameter_types! {
+    pub const MaxValidators: u32 = 16;
+    pub const ValidatorFeedersMembershipMaxMembers: u32 = 3;
+}
+
+type ValidatorFeedersMembershipInstance = pallet_membership::Instance4;
+impl pallet_membership::Config<ValidatorFeedersMembershipInstance> for Runtime {
+    type Event = Event;
+    type AddOrigin = EnsureRootOrHalfCouncil;
+    type RemoveOrigin = EnsureRootOrHalfCouncil;
+    type SwapOrigin = EnsureRootOrHalfCouncil;
+    type ResetOrigin = EnsureRootOrHalfCouncil;
+    type PrimeOrigin = EnsureRootOrHalfCouncil;
+    type MembershipInitialized = ();
+    type MembershipChanged = ();
+    type MaxMembers = ValidatorFeedersMembershipMaxMembers;
+    type WeightInfo = ();
+}
+
+impl pallet_nominee_election::Config for Runtime {
+    type Event = Event;
+    type UpdateOrigin = EnsureRootOrHalfCouncil;
+    type MaxValidators = MaxValidators;
+    type Members = ValidatorFeedersMembership;
+}
+
+parameter_types! {
+    pub const LockPeriod: u64 = 20000; // in milli-seconds
+    pub const LiquidateFactor: Percent = Percent::from_percent(50);
+}
+
+impl pallet_liquidation::Config for Runtime {
+    type AuthorityId = pallet_liquidation::crypto::AuthId;
+    type LockPeriod = LockPeriod;
+    type LiquidateFactor = LiquidateFactor;
 }
 
 impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for Runtime
@@ -762,11 +793,15 @@ construct_runtime!(
         Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
         Oracle: orml_oracle::<Instance1>::{Pallet, Storage, Call,  Event<T>},
 
-        // Parallel
+        // Loans
         Loans: pallet_loans::{Pallet, Call, Storage, Event<T>, Config},
         Prices: pallet_prices::{Pallet, Storage, Call, Event<T>},
         Liquidation: pallet_liquidation::{Pallet, Call},
+
+        // LiquidStaking
         LiquidStaking: pallet_liquid_staking::{Pallet, Call, Storage, Event<T>, Config},
+        NomineeElection: pallet_nominee_election::{Pallet, Call, Storage, Event<T>},
+        ValidatorFeedersMembership: pallet_membership::<Instance4>::{Pallet, Call, Storage, Event<T>, Config<T>}
     }
 );
 
