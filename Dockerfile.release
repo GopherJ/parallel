@@ -31,10 +31,11 @@ RUN useradd -m -u 1000 -U -s /bin/sh -d /parallel parallel && \
 	rm -rf /usr/bin /usr/sbin
 
 USER parallel
+WORKDIR /parallel
 EXPOSE 30333 9933 9944
 VOLUME ["/data"]
 
-RUN echo '#!/bin/bash\n $BIN_PATH $@' > /parallel/docker-entrypoint.sh
-RUN chmod u+x /parallel/docker-entrypoint.sh
+RUN echo '#!/bin/bash\n$BIN_PATH $@' > ./entrypoint.sh
+RUN chmod u+x ./entrypoint.sh
 
-ENTRYPOINT ["/parallel/docker-entrypoint.sh"]
+ENTRYPOINT ["/parallel/entrypoint.sh"]
