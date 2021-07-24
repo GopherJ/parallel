@@ -2,19 +2,25 @@ FROM paritytech/ci-linux:production as builder
 LABEL description="This is the build stage for Parallel. Here we create the binary."
 
 ARG PROFILE=release
-ARG NODE=parallel-dev
+ARG BIN=parallel-dev
+
 WORKDIR /parallel
 
 COPY . /parallel
 
-RUN cargo build --$PROFILE --bin $NODE --features runtime-benchmarks
+RUN cargo build --$PROFILE --bin $BIN --features runtime-benchmarks
 
 # ===== SECOND STAGE ======
 
 FROM debian:buster-slim
 LABEL description="This is the 2nd stage: a very small image where we copy the Parallel binary."
+
 ARG PROFILE=release
-COPY --from=builder /parallel/target/$PROFILE/$NODE /usr/local/bin
+ARG BIN=parallel-dev
+
+ENV BIN_PATH=/usr/local/bin/$BIN
+
+COPY --from=builder /parallel/target/$PROFILE/$BIN /usr/local/bin
 
 RUN useradd -m -u 1000 -U -s /bin/sh -d /parallel parallel && \
 	mkdir -p /parallel/.local && \
@@ -28,4 +34,7 @@ USER parallel
 EXPOSE 30333 9933 9944
 VOLUME ["/data"]
 
-ENTRYPOINT ["/usr/local/bin/$NODE"]
+RUN echo '#!/bin/bash\n $BIN_PATH $@' > /parallel/docker-entrypoint.sh
+RUN chmod u+x /parallel/docker-entrypoint.sh
+
+ENTRYPOINT ["/parallel/docker-entrypoint.sh"]
