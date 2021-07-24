@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node: ["parallel", "parallel-dev"]
+        bin: ["parallel", "parallel-dev"]
 
     steps:
       - name: Set up QEMU
@@ -40,7 +40,9 @@ jobs:
         with:
           file: Dockerfile.release
           push: true
-          build-args: NODE=${{ matrix.node }}
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.node }}:${{ steps.docker_tag.outputs.value }}
+          build-args: |
+            BIN=${{ matrix.bin }}
+            PROFILE=release
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.bin }}:${{ steps.docker_tag.outputs.value }}
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
