@@ -76,13 +76,13 @@ restart: purge run
 
 .PHONY: resources
 resources:
-	target/release/parallel export-genesis-state --chain heiko-dev --parachain-id 200 > ./resources/para-200-genesis
-	target/release/parallel export-genesis-wasm --chain heiko-dev > ./resources/para-200.wasm
+	target/release/parallel export-genesis-state --chain heiko-dev --parachain-id 2000 > ./resources/para-2000-genesis
+	target/release/parallel export-genesis-wasm --chain heiko-dev > ./resources/para-2000.wasm
 
 .PHONY: docker-resources
 docker-resources:
-	docker run --rm  parallelfinance/parallel:latest parallel export-genesis-state --chain heiko-dev --parachain-id 200 > ./resources/para-200-genesis
-	docker run --rm  parallelfinance/parallel:latest parallel export-genesis-wasm --chain heiko-dev > ./resources/para-200.wasm
+	docker run --rm  parallelfinance/parallel:latest parallel export-genesis-state --chain heiko-dev --parachain-id 2000 > ./resources/para-2000-genesis
+	docker run --rm  parallelfinance/parallel:latest parallel export-genesis-wasm --chain heiko-dev > ./resources/para-2000.wasm
 
 .PHONY: launch
 launch:
